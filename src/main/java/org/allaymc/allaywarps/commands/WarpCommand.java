@@ -37,13 +37,18 @@ public class WarpCommand extends Command {
                     return context.fail();
                 }
 
-                Dimension dimension = getDimensionById(warp.getDimensionId());
+                org.allaymc.api.world.World world = Server.getInstance().getWorldPool().getWorld(warp.getWorldName());
+                if (world == null) {
+                    world = player.getWorld();
+                }
+                
+                Dimension dimension = world.getDimension(warp.getDimensionId());
                 if (dimension == null) {
                     player.sendMessage("The dimension for this warp is no longer available.");
                     return context.fail();
                 }
 
-                Location3d loc = new Location3d(warp.getX(), warp.getY(), warp.getZ(), warp.getPitch(), warp.getYaw(), dimension);
+                org.allaymc.api.math.location.Location3dc loc = new Location3d(warp.getX(), warp.getY(), warp.getZ(), warp.getPitch(), warp.getYaw(), dimension);
                 player.teleport(loc);
                 player.sendMessage("Teleported to warp: " + warp.getName());
                 return context.success();
@@ -64,21 +69,22 @@ public class WarpCommand extends Command {
                 }
 
                 String warpName = context.getResult(1);
-                String description = context.getResults().size() > 2 ? context.getResult(2) : "";
+                String description = context.getResult(2);
 
                 if (warpDataManager.warpExists(warpName)) {
                     player.sendMessage("A warp with that name already exists. Use /warp delete first to remove it.");
                     return context.fail();
                 }
 
-                Dimension dimension = player.getDimension();
+                var location = player.getLocation();
+                var dimension = location.dimension();
                 boolean success = warpDataManager.createWarp(
                         warpName,
-                        player.getX(),
-                        player.getY(),
-                        player.getZ(),
-                        player.getYaw(),
-                        player.getPitch(),
+                        location.x(),
+                        location.y(),
+                        location.z(),
+                        (float) location.yaw(),
+                        (float) location.pitch(),
                         dimension,
                         player.getDisplayName(),
                         description
@@ -143,15 +149,5 @@ public class WarpCommand extends Command {
                 player.sendMessage("Use /warp <name> to teleport");
                 return context.success();
             });
-    }
-
-    private Dimension getDimensionById(int dimensionId) {
-        for (var world : Server.getInstance().getWorldPool().getWorlds().values()) {
-            Dimension dimension = world.getDimension(dimensionId);
-            if (dimension != null) {
-                return dimension;
-            }
-        }
-        return null;
     }
 }

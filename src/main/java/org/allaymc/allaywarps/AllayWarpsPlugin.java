@@ -6,7 +6,6 @@ import org.allaymc.api.server.Server;
 import org.allaymc.allaywarps.commands.HomeCommand;
 import org.allaymc.allaywarps.commands.WarpCommand;
 import org.allaymc.allaywarps.data.WarpDataManager;
-import org.allaymc.allaywarps.listeners.PlayerListener;
 
 public class AllayWarpsPlugin extends Plugin {
 
@@ -29,7 +28,6 @@ public class AllayWarpsPlugin extends Plugin {
 
         this.warpDataManager = new WarpDataManager();
 
-        Server.getInstance().getEventBus().registerListener(new PlayerListener(warpDataManager));
         Registries.COMMANDS.register(new WarpCommand(warpDataManager));
         Registries.COMMANDS.register(new HomeCommand(warpDataManager));
 

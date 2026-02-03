@@ -39,13 +39,18 @@ public class HomeCommand extends Command {
                     return context.fail();
                 }
 
-                Dimension dimension = getDimensionById(home.getDimensionId());
+                org.allaymc.api.world.World world = Server.getInstance().getWorldPool().getWorld(home.getWorldName());
+                if (world == null) {
+                    world = player.getWorld();
+                }
+                
+                Dimension dimension = world.getDimension(home.getDimensionId());
                 if (dimension == null) {
                     player.sendMessage("The dimension for this home is no longer available.");
                     return context.fail();
                 }
 
-                Location3d loc = new Location3d(home.getX(), home.getY(), home.getZ(), home.getPitch(), home.getYaw(), dimension);
+                org.allaymc.api.math.location.Location3dc loc = new Location3d(home.getX(), home.getY(), home.getZ(), home.getPitch(), home.getYaw(), dimension);
                 player.teleport(loc);
                 player.sendMessage("Teleported to home: " + home.getName());
                 return context.success();
@@ -71,15 +76,16 @@ public class HomeCommand extends Command {
                     return context.fail();
                 }
 
-                Dimension dimension = player.getDimension();
+                var location = player.getLocation();
+                var dimension = location.dimension();
                 boolean success = warpDataManager.createHome(
                         player.getUniqueId(),
                         homeName,
-                        player.getX(),
-                        player.getY(),
-                        player.getZ(),
-                        player.getYaw(),
-                        player.getPitch(),
+                        location.x(),
+                        location.y(),
+                        location.z(),
+                        (float) location.yaw(),
+                        (float) location.pitch(),
                         dimension
                 );
 
@@ -96,6 +102,11 @@ public class HomeCommand extends Command {
             .exec(context -> {
                 if (!(context.getSender() instanceof EntityPlayer player)) {
                     context.getSender().sendMessage("This command can only be used by players");
+                    return context.fail();
+                }
+
+                if (player.hasPermission("allaywarps.home.delete") != Tristate.TRUE) {
+                    player.sendMessage("You don't have permission to delete homes!");
                     return context.fail();
                 }
 
@@ -136,15 +147,5 @@ public class HomeCommand extends Command {
                 player.sendMessage("Use /home <name> to teleport");
                 return context.success();
             });
-    }
-
-    private Dimension getDimensionById(int dimensionId) {
-        for (var world : Server.getInstance().getWorldPool().getWorlds().values()) {
-            Dimension dimension = world.getDimension(dimensionId);
-            if (dimension != null) {
-                return dimension;
-            }
-        }
-        return null;
     }
 }
