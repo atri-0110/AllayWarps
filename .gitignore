@@ -10,3 +10,7 @@ build/
 
 # macOS
 .DS_Store
+
+# Build artifacts
+*.jar
+*.class
