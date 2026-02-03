@@ -14,6 +14,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
 import java.util.UUID;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WarpDataManager {
@@ -176,5 +177,20 @@ public class WarpDataManager {
     public boolean homeExists(UUID playerUuid, String name) {
         Map<String, HomeLocation> playerHomes = homes.get(playerUuid);
         return playerHomes != null && playerHomes.containsKey(name.toLowerCase());
+    }
+
+    public void savePlayerHomes(UUID playerUuid) {
+        if (!homes.containsKey(playerUuid)) {
+            return;
+        }
+
+        File homesFile = new File(dataFolder, HOMES_FILE);
+        try (FileWriter writer = new FileWriter(homesFile)) {
+            Map<String, Map<String, HomeLocation>> toSave = new HashMap<>();
+            homes.forEach((uuid, homeMap) -> toSave.put(uuid.toString(), homeMap));
+            gson.toJson(toSave, writer);
+        } catch (IOException e) {
+            AllayWarpsPlugin.getInstance().getPluginLogger().error("Failed to save homes", e);
+        }
     }
 }

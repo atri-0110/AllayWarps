@@ -1,5 +1,6 @@
 package org.allaymc.allaywarps;
 
+import org.allaymc.api.eventbus.EventBus;
 import org.allaymc.api.plugin.Plugin;
 import org.allaymc.api.registry.Registries;
 import org.allaymc.api.server.Server;
@@ -11,6 +12,7 @@ public class AllayWarpsPlugin extends Plugin {
 
     private static AllayWarpsPlugin instance;
     private WarpDataManager warpDataManager;
+    private PlayerEventListener playerEventListener;
 
     public static AllayWarpsPlugin getInstance() {
         return instance;
@@ -27,6 +29,9 @@ public class AllayWarpsPlugin extends Plugin {
         this.pluginLogger.info("AllayWarps is enabling...");
 
         this.warpDataManager = new WarpDataManager();
+        this.playerEventListener = new PlayerEventListener(warpDataManager);
+
+        Server.getInstance().getEventBus().registerListener(this.playerEventListener);
 
         Registries.COMMANDS.register(new WarpCommand(warpDataManager));
         Registries.COMMANDS.register(new HomeCommand(warpDataManager));
@@ -39,9 +44,15 @@ public class AllayWarpsPlugin extends Plugin {
     @Override
     public void onDisable() {
         this.pluginLogger.info("AllayWarps is disabling...");
+
+        if (playerEventListener != null) {
+            Server.getInstance().getEventBus().unregisterListener(this.playerEventListener);
+        }
+
         if (warpDataManager != null) {
             warpDataManager.saveAll();
         }
+
         this.pluginLogger.info("AllayWarps disabled.");
     }
 
