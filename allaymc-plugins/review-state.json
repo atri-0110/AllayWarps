@@ -1,5 +1,5 @@
 {
   "lastReviewDate": "2026-02-04",
-  "reviewedPlugins": ["AnnouncementSystem", "BountyHunter", "AllayWarps"],
+  "reviewedPlugins": ["AnnouncementSystem", "BountyHunter", "AllayWarps", "ChatChannels"],
   "lastGithubIssueCheck": "2026-02-04"
 }
