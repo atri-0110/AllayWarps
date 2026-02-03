@@ -77,15 +77,18 @@ scheduler.scheduleRepeating(plugin, () -> {
 }, 20);  // Every second
 ```
 
-### 7. PlayerJoinEvent May Not Exist
-- API docs show `PlayerJoinEvent`, but it may not exist in your version
-- **Workaround**: Use delayed scheduler task
+### 7. PlayerJoinEvent Usage
+- PlayerJoinEvent exists and works correctly
+- **Important**: Must get EntityPlayer from Player to send messages
 ```java
-// Delay kit/item delivery by 1 tick to ensure player fully joined
-scheduler.scheduleDelayed(plugin, () -> {
-    EntityPlayer player = Server.getInstance().getPlayerByUuid(uuid);
-    if (player != null) { giveKit(player); }
-}, 1);
+@EventHandler
+public void onPlayerJoin(PlayerJoinEvent event) {
+    // Player is data object
+    EntityPlayer entityPlayer = event.getPlayer().getControlledEntity();
+    if (entityPlayer != null) {
+        entityPlayer.sendMessage("Welcome!");
+    }
+}
 ```
 
 ### 8. Container Access
@@ -200,7 +203,8 @@ UUID uuid = player.getUuid();  // NOT getLoginData().getUuid()
 - Permissions: `!= Tristate.FALSE` not boolean
 - Bedrock durability: `getDamage()` not `getMeta()`
 - No `cancelTask()` in scheduler
-- PlayerJoinEvent may not exist
+- PlayerJoinEvent exists but Player needs getControlledEntity() for EntityPlayer
+- Container access requires manual stacking
 
 ---
 
@@ -216,7 +220,6 @@ UUID uuid = player.getUuid();  // NOT getLoginData().getUuid()
 - Bypass permission not implemented
 
 ### KitSystem
-- PlayerJoinEvent doesn't exist (use scheduler workaround)
 - Permission system uses Tristate
 - Item creation via reflection (API missing)
 - Container API requires manual stacking
