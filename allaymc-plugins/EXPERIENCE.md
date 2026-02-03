@@ -22,13 +22,39 @@ public class NbtMapAdapter extends TypeAdapter<NbtMap> {
 - **Impact**: Plugin loads but events never trigger
 - **Found in**: BlockLocker, PlayerStatsTracker, DeathChest
 ```java
+import org.allaymc.api.eventbus.EventHandler;
+
 public class MyListener {
     @EventHandler  // <-- NEVER FORGET THIS
     public void onBlockPlace(BlockPlaceEvent event) { ... }
 }
 ```
 
-### 3. Player vs EntityPlayer
+### 3. PlayerJoinEvent and PlayerQuitEvent Location
+- **IMPORTANT**: These events are in `org.allaymc.api.eventbus.event.server` package
+- **Documentation Issue**: Allay docs are outdated, incorrect package path
+- **Correct Import**:
+```java
+import org.allaymc.api.eventbus.event.server.PlayerJoinEvent;
+import org.allaymc.api.eventbus.event.server.PlayerQuitEvent;
+
+// Correct usage
+@EventHandler
+public void onPlayerJoin(PlayerJoinEvent event) {
+    EntityPlayer entityPlayer = event.getPlayer().getControlledEntity();
+    if (entityPlayer != null) {
+        entityPlayer.sendMessage("Welcome!");
+    }
+}
+
+@EventHandler
+public void onPlayerQuit(PlayerQuitEvent event) {
+    UUID uuid = event.getPlayer().getUuid();
+    // Cleanup player data
+}
+```
+
+### 4. Player vs EntityPlayer
 - `Player`: Data object, used in events
 - `EntityPlayer`: Actual entity with methods like `sendMessage()`, `getUuid()`
 - **Conversion**: `player.getControlledEntity()` to get EntityPlayer
@@ -41,7 +67,7 @@ EntityPlayer entity = player.getControlledEntity();
 entity.sendMessage("hello");
 ```
 
-### 4. Permission System
+### 5. Permission System
 - AllayMC uses `Tristate` enum (TRUE, FALSE, UNDEFINED), not boolean
 ```java
 // WRONG
@@ -51,7 +77,7 @@ if (player.hasPermission("perm")) { ... }
 if (player.hasPermission("perm") != Tristate.FALSE) { ... }
 ```
 
-### 5. Durability (Bedrock != Java)
+### 6. Durability (Bedrock != Java)
 - Java Edition: `getMeta()/setMeta()`
 - Bedrock: `getDamage()/setDamage()` from ItemBaseComponent
 ```java
@@ -63,7 +89,7 @@ int damage = item.getDamage();
 int maxDamage = item.getMaxDamage();
 ```
 
-### 6. Scheduler - No cancelTask()
+### 7. Scheduler - No cancelTask()
 - AllayMC has no `cancelTask()` method like Bukkit
 - **Solution**: Track task IDs, return `false` from `onRun()` to stop
 ```java
@@ -75,20 +101,6 @@ scheduler.scheduleRepeating(plugin, () -> {
     }
     // Task logic
 }, 20);  // Every second
-```
-
-### 7. PlayerJoinEvent Usage
-- PlayerJoinEvent exists and works correctly
-- **Important**: Must get EntityPlayer from Player to send messages
-```java
-@EventHandler
-public void onPlayerJoin(PlayerJoinEvent event) {
-    // Player is data object
-    EntityPlayer entityPlayer = event.getPlayer().getControlledEntity();
-    if (entityPlayer != null) {
-        entityPlayer.sendMessage("Welcome!");
-    }
-}
 ```
 
 ### 8. Container Access
@@ -187,6 +199,7 @@ UUID uuid = player.getUuid();  // NOT getLoginData().getUuid()
 - [ ] Check if API methods exist in actual AllayMC API (docs may be outdated)
 - [ ] Dimension ID included in location keys for multi-dimension support
 - [ ] All documented features are implemented
+- [ ] Event imports use correct package: `org.allaymc.api.eventbus.event.server`
 
 ## Quick Reference
 
@@ -203,7 +216,7 @@ UUID uuid = player.getUuid();  // NOT getLoginData().getUuid()
 - Permissions: `!= Tristate.FALSE` not boolean
 - Bedrock durability: `getDamage()` not `getMeta()`
 - No `cancelTask()` in scheduler
-- PlayerJoinEvent exists but Player needs getControlledEntity() for EntityPlayer
+- **PlayerJoinEvent/PlayerQuitEvent**: `org.allaymc.api.eventbus.event.server` (docs outdated!)
 - Container access requires manual stacking
 
 ---
@@ -238,3 +251,10 @@ UUID uuid = player.getUuid();  // NOT getLoginData().getUuid()
 - Missing @EventHandler annotations
 - Player type missing getUniqueId()
 - Fixed: Use entity.getUuid()
+
+---
+
+## API Package Reference (Outdated Docs)
+- **Issue**: Allay documentation is outdated for event package paths
+- **Correct**: PlayerJoinEvent, PlayerQuitEvent are in `org.allaymc.api.eventbus.event.server`
+- **Note**: Always verify actual API by checking the source code or existing working plugins
