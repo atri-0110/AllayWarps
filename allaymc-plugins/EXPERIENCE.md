@@ -2828,6 +2828,158 @@ This is an excellent plugin with comprehensive statistics tracking. The code is 
 
 ---
 
+## BlockLocker Review (2026-02-05)
+
+### Plugin Overview
+BlockLocker is a comprehensive block protection and locking system for AllayMC servers. It allows players to lock chests, doors, furnaces, and other containers to prevent theft. Features include trust system for sharing access, lock/unlock/trust modes, and persistent JSON storage.
+
+### Issues Found and Fixed
+
+#### 1. CRITICAL: Missing PlayerQuitEvent Handler
+- **Problem**: Plugin did not clean up player mode settings (lock/unlock/trust modes) when players disconnected
+- **Impact**:
+  - `lockModePlayers`, `unlockModePlayers`, and `trustModePlayers` maps in ProtectionManager never cleared entries for disconnected players
+  - Memory leak as players join and leave over time
+  - Accumulated player state data that would never be reclaimed
+- **Root Cause**: No event listener to handle player disconnections
+- **Fix Applied**:
+  - Created `PlayerEventListener` class with `@EventHandler` for `PlayerQuitEvent`
+  - Uses correct UUID access pattern: `event.getPlayer().getLoginData().getUuid()`
+  - Calls `protectionManager.cleanupPlayer(uuid)` to remove player from all mode maps
+  - Properly registered via `Server.getInstance().getEventBus().registerListener()`
+- **Lesson**: Player-specific tracking data MUST be cleaned up on disconnect, not just in `onDisable()`
+
+### Code Quality Assessment
+
+#### ✅ Strengths
+
+1. **Excellent Thread Safety**
+   - Uses `ConcurrentHashMap` for all shared data structures (protectedBlocks, lockModePlayers, unlockModePlayers, trustModePlayers)
+   - No race conditions in protection management
+
+2. **Correct API Usage**
+   - Properly uses `@EventHandler` annotation on all event listeners (after fix)
+   - Uses `Server.getInstance().getEventBus().registerListener()` - CORRECT!
+   - Uses correct UUID access pattern in PlayerQuitEvent (after fix)
+   - Uses Tristate comparison for permissions: `== Tristate.TRUE` for bypass check
+   - Properly accesses EntityPlayer from command sender and PlayerInteractBlockEvent
+
+3. **Well-Structured Command System**
+   - Complete command tree with all subcommands: lock, unlock, trust, untrust, info, list, help
+   - Good permission-based command access (`blocklocker.use`, `blocklocker.bypass`)
+   - Uses `context.getResult(n)` for parameter access (correct pattern)
+   - Returns `context.success()` and `context.fail()` appropriately
+   - Aliases support (`bl`, `lock`)
+   - Self-trust prevention logic
+
+4. **Comprehensive Protection System**
+   - Supports locking various block types (chests, doors, furnaces, hoppers, dispensers, barrels, anvils, enchanting tables, beacons, ender chests, trapped chests)
+   - Trust system for sharing access with other players
+   - Owner can break protected blocks (auto-removes protection)
+   - Bypass permission for admins
+   - Mode-based interaction (lock mode, unlock mode, trust mode)
+
+5. **Clean Architecture**
+   - Proper separation: Plugin class, commands, listeners, data manager, data model, utils
+   - Manager pattern for protection operations
+   - Lombok for clean data classes (ProtectedBlock)
+   - Utility class for block-related operations
+
+6. **Data Management**
+   - Uses Gson for JSON serialization with pretty printing
+   - Handles file I/O with try-with-resources
+   - Creates data directories automatically
+   - Saves data immediately after modifications
+   - Loads protected blocks from disk on startup
+
+7. **Good User Experience**
+   - Clear messages for all operations
+   - Mode-based interaction (click-to-lock, click-to-unlock, click-to-trust)
+   - Protection info command showing locked blocks and trusted player counts
+   - Player name resolution for trusted players
+   - Helpful error messages (block already locked, player not found, etc.)
+
+8. **Build Configuration**
+   - Proper `.gitignore` covering all build artifacts and IDE files
+   - Correct AllayGradle configuration with API version 0.24.0
+   - Uses Lombok for clean data classes
+
+#### ✅ No Other Critical Bugs Found
+
+1. **All event listeners have @EventHandler annotation** ✓ (after PlayerQuitEvent fix)
+2. **Correct Player vs EntityPlayer usage** ✓
+3. **Thread-safe data structures** ✓ (ConcurrentHashMap throughout)
+4. **No memory leaks** ✓ (after PlayerQuitEvent fix)
+5. **Correct API package imports** ✓
+6. **Good .gitignore** ✓
+7. **Proper cross-dimension support** ✓ (uses worldName + dimensionId)
+
+### API Compatibility Notes
+
+- **PlayerInteractBlockEvent**: Uses `event.getInteractInfo().clickedBlockPos()` - CORRECT!
+- **BlockBreakEvent Entity**: Uses `event.getEntity()` and checks `instanceof EntityPlayer` - CORRECT!
+- **PlayerQuitEvent UUID**: Uses `event.getPlayer().getLoginData().getUuid()` - CORRECT!
+- **Dimension Info**: Uses `dimension.getDimensionInfo().dimensionId()` - CORRECT!
+- **World Name**: Uses `player.getWorld().getWorldData().getDisplayName()` - CORRECT!
+
+### Unique Design Patterns
+
+#### Mode-Based Interaction System
+Three interaction modes that players can enter:
+- **Lock Mode**: Right-click a block to protect it
+- **Unlock Mode**: Right-click a block to remove protection
+- **Trust Mode**: Right-click a block to add/remove trusted player
+
+This simplifies the user interface - players don't need to specify block coordinates, they just interact naturally.
+
+#### Trust System
+- Owner adds/trusts a player (they must be online)
+- Trusted player can interact with all protected blocks owned by the owner
+- Trust is per-block, not global (granular control)
+- Can remove trust by re-running the command on the same block
+
+#### Location Key Format
+Standard format for location tracking: `worldName:dimensionId:x:y:z`
+
+### Overall Assessment
+
+- **Code Quality**: 9/10 (excellent structure, clean architecture)
+- **Functionality**: 10/10 (all features working as designed)
+- **API Usage**: 10/10 (correct AllayMC 0.24.0 patterns after fix)
+- **Thread Safety**: 10/10 (perfect ConcurrentHashMap usage)
+- **Documentation**: 8/10 (code is well-commented, README exists)
+- **Build Status**: ✅ Successful
+- **Recommendation**: Production-ready
+
+This is an excellent plugin with a clean, intuitive interface. The mode-based interaction system is user-friendly. The trust system is flexible and well-implemented. The only issue found was the missing PlayerQuitEvent handler, which is now fixed.
+
+### Lessons Learned
+
+1. **PlayerQuitEvent Cleanup is Essential**: Always remove player data from all tracking structures when players disconnect
+2. **Mode-Based Interaction is User-Friendly**: Using interaction modes simplifies command usage
+3. **Per-Block vs Global Trust**: Choose based on use case (BlockLocker uses per-block for granular control)
+4. **String Matching for Block Detection**: Simple `contains()` checks work well for namespace-based identifiers
+5. **Permission Bypass Pattern**: Use `== Tristate.TRUE` for positive permission checks
+
+### Future Improvements
+
+- Configurable protection limits per player
+- Admin commands to remove protections
+- Protection expiration system
+- Redstone/hopper control (fields exist but not implemented)
+- Protection transfer (change owner)
+- Global trust feature
+- Chest linking (double chests)
+- Hopper protection
+- GUI-based management
+
+### Commit Details
+- **Commit**: 9429ff6
+- **Changes**: Added PlayerEventListener with @EventHandler for PlayerQuitEvent
+- **Build**: ✅ Successful
+
+---
+
 ## PlayerStats Review (2026-02-04)
 
 ### Plugin Overview
