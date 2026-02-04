@@ -1,5 +1,236 @@
 # AllayMC Plugin Review - Core Lessons
 
+## DeathChest Review (2026-02-05)
+
+### Plugin Overview
+DeathChest is a death chest system for AllayMC that stores player items when they die, preventing item loss. It provides automatic item collection from player inventory, armor, and offhand slots, chest recovery via commands, expiration system (24 hours), cross-dimension support, and persistent JSON storage.
+
+### Critical Issue: EntityDieEvent Timing Problem
+
+**Status**: UNFIXABLE with current AllayMC API - this is a fundamental API design limitation.
+
+**The Problem**:
+According to the documented analysis in EXPERIENCE.md, DeathChest has a critical timing issue:
+1. AllayMC fires `CEntityDieEvent` (internal event) first
+2. `EntityContainerHolderComponentImpl.onDie()` listens to this event and **drops all items on the ground**, then clears all container slots
+3. AllayMC then fires `EntityDieEvent` (public API event) that plugins listen to
+4. DeathChest plugin's `onEntityDie()` handler fires, but **containers are already empty**
+5. `collectItems()` returns an empty list
+6. No death chest is created
+
+**Why This Cannot Be Fixed**:
+- `CEntityDieEvent` is in `org.allaymc.server.entity.component.event` package (server internal), not exposed in public API
+- EventBus doesn't support listener ordering/priority to run plugin handlers before internal AllayMC handlers
+- Using internal APIs breaks plugin compatibility with future AllayMC versions
+- Cannot reliably collect dropped items from the ground (they may be picked up or despawned)
+
+**Required API Fix**:
+AllayMC needs to add an `EntityPreDeathEvent` that fires **before** items are dropped, similar to Bukkit's `PlayerDeathEvent`.
+
+### Issues Found & Fixed
+
+#### 1. CRITICAL: Scheduler Task Memory Leak
+- **Problem**: The periodic cleanup task (every 30 minutes) had no way to stop when plugin is disabled
+- **Impact**:
+  - Task continued running after plugin disable, causing memory leaks
+  - Duplicate tasks created on plugin reload
+  - Wasted CPU cycles from continued task execution
+- **Root Cause**: AllayMC doesn't have `cancelTask()` method like Bukkit, and no tracking mechanism was implemented
+- **Fix Applied**:
+  - Added `Set<String> activeCleanupTasks` field using `ConcurrentHashMap.newKeySet()` for thread-safe task tracking
+  - Each task gets a unique ID from `UUID.randomUUID()`
+  - Task checks `activeCleanupTasks.contains(taskId)` on each run and returns `false` if not found (stops the task)
+  - In `onDisable()`, clears `activeCleanupTasks` to stop all tasks
+  - Follows AllayMC's scheduler limitations (no `cancelTask()` method)
+- **Pattern**:
+```java
+// Create tracking set
+private final Set<String> activeCleanupTasks = ConcurrentHashMap.newKeySet();
+
+// Start task
+String taskId = UUID.randomUUID().toString();
+activeCleanupTasks.add(taskId);
+Server.getInstance().getScheduler().scheduleRepeating(this, () -> {
+    if (!activeCleanupTasks.contains(taskId)) {
+        return false; // Stop this task
+    }
+    // Do work
+    return true;
+}, interval);
+
+// Stop all tasks
+activeCleanupTasks.clear(); // Tasks will stop on next run
+```
+
+### Code Quality Assessment
+
+#### ✅ Strengths
+
+1. **Excellent NBT Serialization**
+   - Implements custom `NbtMapAdapter` for Gson serialization
+   - Handles nested NbtMap, byte arrays, int arrays, long arrays
+   - Proper conversion between NBT and JSON formats
+   - Textbook implementation for AllayMC NBT handling
+
+2. **Proper Event Handling**
+   - Has `@EventHandler` annotation on `EntityDieEvent` listener
+   - Correctly uses `EntityPlayer.getUniqueId()` for UUID access (correct for EntityPlayer!)
+   - Good null checks for world and dimension references
+   - Properly registers listeners in lifecycle methods
+
+3. **Comprehensive Container Collection**
+   - Collects items from all three containers: INVENTORY, ARMOR, OFFHAND
+   - Uses `container.getContainerType().getSize()` to get correct size
+   - Properly clears container slots after collecting items
+   - Preserves complete item state via NBT serialization
+
+4. **Thread Safety**
+   - Uses `ConcurrentHashMap` for all shared data structures (playerChests)
+   - Iterator-based cleanup to avoid ConcurrentModificationException
+   - Proper synchronization on file I/O operations
+
+5. **Smart Item Recovery**
+   - Checks inventory space before attempting recovery
+   - Implements manual item stacking logic
+   - Tries to stack with existing items first, then fills empty slots
+   - Provides clear error messages when inventory is full
+
+6. **Expiration System**
+   - 24-hour expiration on death chests
+   - Automatic cleanup every 30 minutes
+   - Expired chests filtered from player lists
+   - Logged cleanup for monitoring
+
+7. **Cross-Dimension Support**
+   - Stores both `worldName` and `dimensionId`
+   - Handles missing worlds gracefully with null checks
+   - Properly creates location data for all dimensions
+
+8. **Data Management**
+   - Per-player JSON files for efficient access
+   - Uses Gson with pretty printing
+   - Immediate save after modifications
+   - Handles file I/O with try-with-resources
+
+9. **Command System**
+   - Clean command tree with subcommands: list, recover, help
+   - Uses `context.getResult(n)` for parameter access (correct pattern)
+   - Supports partial UUID matching for user convenience
+   - Returns `context.success()` and `context.fail()` appropriately
+
+10. **Build Configuration**
+    - Proper `.gitignore` covering all build artifacts
+    - Correct AllayGradle configuration with API version 0.24.0
+    - Uses Lombok for clean data classes
+
+#### ⚠️ Critical Functionality Issue
+
+**Unfixable API Limitation**: Due to EntityDieEvent timing, the plugin's core feature (death chest creation) does not work. The code is correct, but the event fires too late to collect items.
+
+### API Compatibility Notes
+
+- **EntityPlayer.getUniqueId()**: Used in DeathListener - CORRECT!
+  - EntityPlayer (from EntityDieEvent.getEntity()) has getUniqueId() method
+  - This is the correct UUID access pattern for EntityPlayer
+
+- **@EventHandler annotation**: Present on DeathListener.onEntityDie() - CORRECT!
+
+- **Container access**: Uses `container.getContainerType().getSize()` - correct pattern
+
+### Unique Design Patterns
+
+#### Manual Item Stacking in Recovery
+Plugin implements custom stacking logic since AllayMC's `Container` API doesn't have built-in stacking:
+```java
+// First pass: try to stack with existing items
+for (int i = 0; i < inventory.getContainerType().getSize() && remaining > 0; i++) {
+    ItemStack existing = inventory.getItemStack(i);
+    if (existing != null && existing.getItemType() == itemStack.getItemType()) {
+        int canAdd = Math.min(maxStackSize - existing.getCount(), remaining);
+        if (canAdd > 0) {
+            existing.setCount(existing.getCount() + canAdd);
+            remaining -= canAdd;
+        }
+    }
+}
+
+// Second pass: fill empty slots
+for (int i = 0; i < inventory.getContainerType().getSize() && remaining > 0; i++) {
+    ItemStack existing = inventory.getItemStack(i);
+    if (existing == null || existing.getItemType() == AIR) {
+        int toAdd = Math.min(maxStackSize, remaining);
+        ItemStack newStack = NBTIO.getAPI().fromItemStackNBT(itemData.getNbtData());
+        if (newStack != null) {
+            newStack.setCount(toAdd);
+            inventory.setItemStack(i, newStack);
+            remaining -= toAdd;
+        }
+    }
+}
+```
+
+#### Partial UUID Matching for User Convenience
+Command accepts partial UUIDs (first few characters) for easier recovery:
+```java
+try {
+    chestId = UUID.fromString(chestIdStr);
+} catch (IllegalArgumentException e) {
+    List<ChestData> chests = chestManager.getPlayerChests(player.getUniqueId());
+    chestId = null;
+    
+    for (ChestData chest : chests) {
+        if (chest.getChestId().toString().startsWith(chestIdStr.toLowerCase())) {
+            chestId = chest.getChestId();
+            break;
+        }
+    }
+}
+```
+
+#### Cleanup on Load
+Expired chests are filtered when loading from disk:
+```java
+return chests.stream()
+        .filter(chest -> !chest.isRecovered())
+        .filter(chest -> (currentTime - chest.getDeathTime()) < EXPIRATION_TIME)
+        .collect(Collectors.toList());
+```
+This prevents expired chests from being shown to players.
+
+### Overall Assessment
+
+- **Code Quality**: 9/10 (excellent code, well-structured, follows AllayMC patterns)
+- **Functionality**: 0/10 (core feature doesn't work due to API timing issue)
+- **API Usage**: 10/10 (perfect AllayMC 0.24.0 patterns)
+- **Thread Safety**: 10/10 (excellent ConcurrentHashMap usage)
+- **NbtMap Serialization**: 10/10 (textbook implementation)
+- **Build Status**: ✅ Successful
+- **Recommendation**: Cannot be used until AllayMC provides proper death event timing
+
+### Lessons Learned
+
+1. **EntityDieEvent Timing Is Too Late**: By the time EntityDieEvent fires, items are already on the ground
+2. **Scheduler Tasks Must Be Tracked**: AllayMC doesn't have `cancelTask()`, so you must implement self-terminating tasks with tracking sets
+3. **Self-Terminating Task Pattern**: Use `Set<String>` with UUIDs to track tasks, clear the set to stop all tasks
+4. **ConcurrentHashMap.newKeySet()**: Provides thread-safe set without explicit synchronization
+5. **EntityPlayer.getUniqueId()**: Correct UUID access for EntityPlayer type (different from Player in join/quit events)
+6. **Manual Item Stacking Required**: AllayMC Container API doesn't have built-in stacking, implement custom logic
+7. **Container.getContainerType().getSize()**: Correct way to get container size
+8. **NbtMap Serialization**: Requires custom Gson TypeAdapter that converts to/from regular Maps
+9. **Partial UUID Matching**: Great UX improvement for commands with UUID parameters
+10. **Per-Player JSON Files**: Scale better than one giant file for player-specific data
+
+### Commit Details
+- **Commit**: 4ea981e
+- **Changes**:
+  - Added `activeCleanupTasks` Set for tracking scheduler tasks
+  - Tasks check tracking set and return false when plugin disabled
+  - Clear `activeCleanupTasks` in onDisable to stop all tasks
+  - Prevents memory leak on plugin disable and duplicate tasks on reload
+- **Build**: ✅ Successful
+
+---
+
 ## InventorySaver Development (2026-02-05)
 
 ### Plugin Overview

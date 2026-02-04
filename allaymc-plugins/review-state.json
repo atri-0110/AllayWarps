@@ -1,5 +1,17 @@
 {
   "lastReviewDate": "2026-02-05",
-  "reviewedPlugins": ["AllayWarps", "ItemRepair", "LuckyBlocks", "AnnouncementSystem", "ParkourArena", "BlockLocker", "ServerAnnouncer", "RandomTeleport", "ItemMail", "ChatChannels"],
-  "lastGithubIssueCheck": "2026-02-05T04:14:00"
+  "reviewedPlugins": [
+    "AllayWarps",
+    "ItemRepair",
+    "LuckyBlocks",
+    "AnnouncementSystem",
+    "ParkourArena",
+    "BlockLocker",
+    "ServerAnnouncer",
+    "RandomTeleport",
+    "ItemMail",
+    "ChatChannels",
+    "DeathChest"
+  ],
+  "lastGithubIssueCheck": "2026-02-05T05:04:48.844952"
 }
