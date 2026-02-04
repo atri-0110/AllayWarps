@@ -1,5 +1,244 @@
 # AllayMC Plugin Review - Core Lessons
 
+## MobArena Review (2026-02-05)
+
+### Plugin Overview
+MobArena is a PvE (Player vs Environment) arena system for AllayMC servers. Players fight waves of mobs, earn points, and receive rewards. Features include multiple arenas, wave-based combat, player stats tracking, automatic wave management, and arena listing.
+
+### Issues Found & Fixed
+
+#### 1. CRITICAL: Scheduler Task Memory Leak
+- **Problem**: Two scheduler tasks (wave progression and arena reset) had no way to stop them when plugin is disabled
+- **Impact**:
+  - Tasks continued running after plugin disable, causing memory leaks
+  - Wave tasks recursively scheduled more waves even after arena stopped
+  - Accumulated scheduled tasks consumed memory and CPU
+  - Duplicate tasks created on plugin reload
+- **Root Cause**: AllayMC doesn't have `cancelTask()` method like Bukkit, and no tracking mechanism was implemented
+- **Fix Applied**:
+  - Added `Set<String> activeTasks` field using `ConcurrentHashMap.newKeySet()` for thread-safe task tracking
+  - Added `waveTaskId` and `resetTaskId` fields to Arena class for per-arena task tracking
+  - Each task gets a unique ID from `UUID.randomUUID()`
+  - Tasks check `activeTasks.contains(taskId)` on each run and return early if not found (self-terminating pattern)
+  - In `Arena.stop()`, removes both wave and reset task IDs from tracking
+  - In `onDisable()`, clears `activeTasks` to stop all tasks
+  - Follows AllayMC's scheduler limitations (no `cancelTask()` method)
+- **Pattern**:
+```java
+// In main plugin class
+private final Set<String> activeTasks = ConcurrentHashMap.newKeySet();
+
+public void addActiveTask(String taskId) {
+    activeTasks.add(taskId);
+}
+
+public void removeActiveTask(String taskId) {
+    activeTasks.remove(taskId);
+}
+
+public boolean isActiveTask(String taskId) {
+    return activeTasks.contains(taskId);
+}
+
+// In onDisable()
+activeTasks.clear(); // Stops all tasks
+
+// In Arena class
+private String waveTaskId;
+private String resetTaskId;
+
+public void startWave() {
+    waveTaskId = UUID.randomUUID().toString();
+    plugin.addActiveTask(waveTaskId);
+    scheduler.scheduleDelayed(plugin, () -> {
+        if (!plugin.isActiveTask(waveTaskId)) {
+            return; // Task cancelled
+        }
+        plugin.removeActiveTask(waveTaskId);
+        startWave();
+    }, interval);
+}
+
+public void stop() {
+    if (waveTaskId != null) {
+        plugin.removeActiveTask(waveTaskId);
+        waveTaskId = null;
+    }
+    if (resetTaskId != null) {
+        plugin.removeActiveTask(resetTaskId);
+        resetTaskId = null;
+    }
+}
+```
+
+### Code Quality Assessment
+
+#### ✅ Strengths
+
+1. **Excellent Event Handling**
+   - Has `@EventHandler` annotations on both PlayerJoinEvent and PlayerQuitEvent listeners
+   - Correctly uses `event.getPlayer().getLoginData().getUuid()` for UUID access in PlayerQuitEvent - **CORRECT!**
+   - Properly removes players from arena on disconnect
+   - Clean event listener registration/unregistration
+
+2. **Correct API Usage**
+   - Uses `EntityPlayer.getUniqueId()` in commands - **CORRECT!**
+   - Properly distinguishes between Player (in events) and EntityPlayer (in commands)
+   - Uses `Tristate.TRUE` comparison for permission checks
+   - Good null checks for `player.getControlledEntity()` before sending messages
+
+3. **Clean Command System**
+   - Complete command tree with all subcommands: join, leave, list, stats, help
+   - Good validation: checks if player is in arena, checks permissions
+   - Uses `context.getResult()` for parameter access (correct pattern)
+   - Returns `context.success()` and `context.fail()` appropriately
+   - Helpful error messages with color codes
+
+4. **Thread-Safe Data Structures**
+   - Uses `ConcurrentHashMap` for `arenaPlayers` and `arenas`
+   - Uses `ConcurrentHashMap.newKeySet()` for `players` set in Arena
+   - No race conditions in arena join/leave operations
+
+5. **Smart Arena Management**
+   - Arena automatically stops when no players left
+   - Wave progression automatically schedules next wave
+   - Arena automatically resets 5 seconds after completion
+   - Player stats tracked per session (kills, wave, score, completed)
+
+6. **Wave System Design**
+   - Configurable max waves and wave interval
+   - Automatic wave progression with increasing difficulty
+   - Wave completion rewards (+50 points)
+   - Arena completion bonus (+1000 points)
+
+7. **Arena Listing**
+   - Shows all available arenas with status
+   - Displays player count and running/idle status
+   - Helpful for players to find available arenas
+
+8. **Scoring System**
+   - Kill points: +10 per mob killed
+   - Wave completion: +50 per wave
+   - Arena completion: +1000 bonus points
+   - Tracks player stats across sessions
+
+9. **Build Configuration**
+   - Proper `.gitignore` covering all build artifacts and IDE files
+   - Correct AllayGradle configuration with API version 0.24.0
+   - Uses Lombok for clean data classes
+
+#### ⚠️ Issues Found
+
+1. **Scheduler Task Memory Leak** (FIXED) - See above
+
+2. **Incomplete Feature Implementation**
+   - No actual mob spawning in waves (just wave counter increments)
+   - No damage tracking or death handling
+   - No mob AI or combat mechanics
+   - Arena is essentially a framework without core gameplay
+   - This is acceptable for a basic framework but needs completion for production use
+
+3. **Player Name Handling**
+   - Uses `String.valueOf(uuid.hashCode())` as fallback for player names
+   - This is the workaround mentioned in MobArena development lessons
+   - Not user-friendly for stats and messaging
+
+4. **Arena Persistence**
+   - `loadArenas()` and `saveArenas()` are stubs
+   - No actual config file loading/saving
+   - Always creates default "Default" arena on load
+   - Arena settings are not configurable without code changes
+
+#### ✅ No Other Critical Bugs Found
+
+1. **All event listeners have @EventHandler annotation** ✓
+2. **Correct Player vs EntityPlayer usage** ✓
+3. **Thread-safe data structures** ✓ (ConcurrentHashMap)
+4. **No memory leaks** ✓ (fixed scheduler task issue)
+5. **Correct API package imports** ✓
+6. **Good input validation** ✓
+
+### API Compatibility Notes
+
+- **PlayerQuitEvent UUID access**: Uses `event.getPlayer().getLoginData().getUuid()` - **CORRECT!**
+  - This is the proper way to get UUID from Player type in PlayerQuitEvent
+
+- **EntityPlayer.getUniqueId()**: Used in commands - **CORRECT!**
+  - EntityPlayer has getUniqueId() method, different from Player in events
+
+### Unique Design Patterns
+
+#### Recursive Wave Scheduling
+The `startWave()` method schedules itself for the next wave:
+```java
+public void startWave() {
+    currentWave++;
+    if (currentWave > maxWaves) {
+        completeArena();
+        return;
+    }
+    // Schedule next wave
+    scheduler.scheduleDelayed(plugin, this::startWave, interval);
+}
+```
+This creates an infinite loop of wave progression until maxWaves is reached.
+
+#### Arena Auto-Stop on Empty
+Arena automatically stops when no players left:
+```java
+public void removePlayer(UUID uuid) {
+    players.remove(uuid);
+    if (players.isEmpty()) {
+        stop();
+    }
+}
+```
+Prevents empty arenas from running and consuming resources.
+
+#### Delayed Arena Reset
+After arena completion, a 5-second delay before resetting:
+```java
+scheduler.scheduleDelayed(plugin, () -> {
+    currentWave = 0;
+    players.clear();
+}, 5 * 20);
+```
+Gives players time to see completion message before arena resets.
+
+### Overall Assessment
+
+- **Code Quality**: 8/10 (clean, well-structured, had 1 critical issue)
+- **Functionality**: 5/10 (framework works, but core gameplay missing - no actual mobs)
+- **API Usage**: 10/10 (perfect AllayMC 0.24.0 patterns)
+- **Thread Safety**: 10/10 (excellent ConcurrentHashMap usage)
+- **Build Status**: ✅ Successful
+- **Recommendation**: Good framework, but needs mob spawning and combat logic for production use
+
+### Lessons Learned
+
+1. **Scheduler Tasks Must Be Tracked**: AllayMC doesn't have `cancelTask()`, so you must implement self-terminating tasks with tracking sets
+2. **Self-Terminating Task Pattern**: Use `Set<String>` with UUIDs to track tasks, clear the set to stop all tasks
+3. **ConcurrentHashMap.newKeySet()**: Provides thread-safe set without explicit synchronization
+4. **PlayerQuitEvent UUID Pattern**: Always use `event.getPlayer().getLoginData().getUuid()`, never `getUuid()` or `getUniqueId()`
+5. **EntityPlayer UUID Pattern**: EntityPlayer (from commands) has `getUniqueId()`, different from Player in events
+6. **Recursive Task Scheduling**: `startWave()` scheduling itself creates wave progression loop
+7. **Arena Auto-Stop**: Stop arena when players empty to save resources
+8. **Delayed Reset**: Add delay after completion before resetting arena state
+9. **Framework vs Complete Feature**: This is a good framework but needs mob spawning and combat for full functionality
+10. **Per-Arena Task Tracking**: Each arena needs its own task IDs for independent wave management
+
+### Commit Details
+- **Commit**: a593cb8
+- **Changes**:
+  - Added `activeTasks` Set for tracking scheduler tasks
+  - Added `waveTaskId` and `resetTaskId` to Arena class
+  - Tasks check tracking set and return early when plugin disabled
+  - Clear `activeTasks` in onDisable to stop all tasks
+  - Prevents memory leak on plugin disable and duplicate tasks on reload
+- **Build**: ✅ Successful
+
+---
+
 ## DeathChest Review (2026-02-05)
 
 ### Plugin Overview

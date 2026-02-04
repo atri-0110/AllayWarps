@@ -15,7 +15,8 @@
     "BountyHunter",
     "TradePlugin",
     "InventorySaver",
-    "PlayerStatsTracker"
+    "PlayerStatsTracker",
+    "MobArena"
   ],
-  "lastGithubIssueCheck": "2026-02-05T06:00:00.000000"
+  "lastGithubIssueCheck": "2026-02-05T07:00:00.000000"
 }
