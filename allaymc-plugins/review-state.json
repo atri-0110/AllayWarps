@@ -1,5 +1,5 @@
 {
   "lastReviewDate": "2026-02-05",
-  "reviewedPlugins": ["AllayWarps", "ItemRepair", "LuckyBlocks", "AnnouncementSystem", "ParkourArena", "BlockLocker", "ServerAnnouncer", "RandomTeleport", "ItemMail"],
+  "reviewedPlugins": ["AllayWarps", "ItemRepair", "LuckyBlocks", "AnnouncementSystem", "ParkourArena", "BlockLocker", "ServerAnnouncer", "RandomTeleport", "ItemMail", "ChatChannels"],
   "lastGithubIssueCheck": "2026-02-05"
 }
