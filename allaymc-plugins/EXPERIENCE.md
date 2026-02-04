@@ -2977,9 +2977,212 @@ This is an exemplary plugin that demonstrates perfect understanding of AllayMC's
 
 ### Remaining Unreviewed Plugins
 After this review, the following plugins remain unreviewed:
+- AuctionHouse
+- KitSystem
 - AnnouncementSystem
-- CustomNPCs
-- DeathChest
-- PlayerStatsTracker
-- ServerAnnouncer (just developed, needs review)
+- ServerAnnouncer
+
+---
+
+## ParkourArena Review (2026-02-04)
+
+### Plugin Overview
+ParkourArena is a comprehensive parkour challenge system for AllayMC servers that allows administrators to create parkour courses with checkpoints, leaderboards, and rewards. Players can compete for best completion times and earn rewards for completing courses.
+
+### Critical Issues Found and Fixed
+
+#### 1. Duplicate getDataDirectory() Method
+- **Problem**: ParkourArenaPlugin.java had two identical `getDataDirectory()` methods (lines 62 and 70-72)
+- **Impact**: Compilation error - duplicate method definitions
+- **Root Cause**: Copy-paste error during development
+- **Fix Applied**: Removed the duplicate method, kept only one
+
+#### 2. Location3dc vs Location3d Type Incompatibility
+- **Problem**: EntityMoveEvent.getTo() returns `Location3dc` (constant location), but Arena stores `Location3d`
+- **Impact**: Compilation errors - incompatible types in all position-related operations
+- **Root Cause**: AllayMC 0.24.0 uses Location3dc for movement events (immutable) vs Location3d for storage (mutable)
+- **Fix Applied**: Created new Location3d instances with the same coordinates and dimension:
+```java
+Location3d toLocation = new Location3d(
+    event.getTo().x(),
+    event.getTo().y(),
+    event.getTo().z(),
+    event.getTo().dimension()
+);
+```
+
+#### 3. EntityPlayer.getName() Doesn't Exist
+- **Problem**: Code tried to call `player.getName()` on EntityPlayer, but this method doesn't exist in AllayMC 0.24.0
+- **Impact**: Compilation errors - method not found
+- **Root Cause**: API difference - EntityPlayer doesn't have getName() method
+- **Fix Applied**: Created `getPlayerNameByUuid()` helper method that:
+  - For online players: Would normally iterate players (but LoginData.getName() also doesn't exist)
+  - For MVP: Returns truncated UUID string (`uuid.substring(0, 8)`) as identifier
+  - Note: Player name storage in records is needed for proper implementation
+
+#### 4. Container.getSize() Doesn't Exist
+- **Problem**: Code tried to call `inventory.getSize()` on Container, but this method doesn't exist in AllayMC 0.24.0
+- **Impact**: Compilation error - method not found
+- **Root Cause**: AllayMC Container API doesn't have getSize() method
+- **Fix Applied**: Used fixed size of 36 for player inventory (standard Bedrock inventory size)
+
+#### 5. getDataFolder() Doesn't Exist
+- **Problem**: Code tried to call `getDataFolder()` on Plugin, but this method doesn't exist in AllayMC 0.24.0
+- **Impact**: Compilation error - method not found
+- **Root Cause**: AllayMC 0.24.0 uses different API for plugin directory
+- **Fix Applied**: Used `getPluginContainer().dataFolder().toFile().toPath()`:
+```java
+public Path getDataDirectory() {
+    return getPluginContainer().dataFolder().toFile().toPath();
+}
+```
+
+#### 6. Missing Imports
+- **Problem**: ArenaManager missing `Location3d` import, ParkourCommand had unused imports
+- **Impact**: Compilation errors - class not found
+- **Fix Applied**: Added proper imports and removed unused ones
+
+#### 7. Death Handler Didn't Teleport Player
+- **Problem**: `onEntityDie()` logged a message but didn't actually teleport the player to their last checkpoint
+- **Impact**: When players died, they stayed in place instead of respawning at checkpoint
+- **Root Cause**: Incomplete implementation - only logging, not action
+- **Fix Applied**: Added teleportation logic to move player to last checkpoint:
+```java
+PlayerProgress progress = arenaManager.getPlayerProgress(playerUuid);
+if (progress != null) {
+    int checkpointIndex = progress.getCurrentCheckpointIndex();
+    if (checkpointIndex >= 0 && checkpointIndex < arena.getCheckpoints().size()) {
+        player.teleport(arena.getCheckpoints().get(checkpointIndex));
+    } else {
+        player.teleport(arena.getStartPosition());
+    }
+}
+```
+
+### Code Quality Assessment
+
+#### ✅ Strengths
+
+1. **Excellent Thread Safety**
+   - Uses `ConcurrentHashMap` for all shared data structures (arenas, arenaRecords, playerProgress)
+   - No race conditions in arena state management
+
+2. **Correct Permission System Usage**
+   - Properly uses `Tristate.TRUE` comparison for permission checks
+   - Correct AllayMC permission pattern: `!= Tristate.TRUE` not boolean
+
+3. **Well-Structured Command System**
+   - Complete command tree with all subcommands: create, delete, setstart, setend, addcheckpoint, listcheckpoints, setreward, join, leave, reset, leaderboard, checkpoints
+   - Good permission-based command access (parkour.admin, parkour.play)
+   - Uses `context.success()` and `context.fail()` appropriately
+   - Helpful error messages for all failure cases
+
+4. **Clean Architecture**
+   - Proper separation: Plugin class, Command, Listener, Manager, Data classes, Utils
+   - Arena, PlayerProgress, PlayerRecord are well-encapsulated data classes using Lombok
+   - Manager pattern for arena lifecycle and data operations
+
+5. **Good Feature Set**
+   - Arena management (create, delete, configure)
+   - Checkpoint system with progress tracking
+   - Leaderboard with top 10 records
+   - Death handling with checkpoint respawn
+   - Rewards system
+   - Difficulty levels
+
+6. **Comprehensive Documentation**
+   - Excellent README with feature list, commands, permissions, usage examples
+   - Clear command reference table
+   - API usage examples for integration
+   - Future plans section
+
+7. **Data Management**
+   - Uses Gson for JSON serialization with pretty printing
+   - Handles file I/O with try-with-resources
+   - Creates data directories automatically
+   - Saves data immediately after modifications
+
+#### ✅ No Other Critical Bugs Found (After Fixes)
+
+1. **Correct API usage** ✓ (after fixes)
+2. **Thread-safe data structures** ✓ (ConcurrentHashMap throughout)
+3. **Event listeners have @EventHandler** ✓
+4. **Good command structure** ✓
+5. **Proper build configuration** ✓
+
+### API Compatibility Notes
+
+- **Location3dc to Location3d Conversion**: EntityMoveEvent returns Location3dc (constant/immutable), need to create new Location3d instances
+- **EntityPlayer API**: EntityPlayer has no `getName()` method in 0.24.0 - need alternative approach
+- **Container API**: Container has no `getSize()` method - use fixed size for known container types
+- **Plugin Directory API**: Use `getPluginContainer().dataFolder().toFile()`, not `getDataFolder()`
+
+### Unique Design Patterns
+
+#### Checkpoint-Based Progress
+Tracks progress by checkpoint index, allowing players to respawn at last checkpoint:
+```java
+private int currentCheckpointIndex; // -1 = at start, 0 = first checkpoint, etc.
+```
+
+#### Top 10 Leaderboard System
+Automatically sorts and limits to top 10 records:
+```java
+records.sort(Comparator.comparingLong(PlayerRecord::getCompletionTime));
+if (records.size() > 10) {
+    records.remove(10);
+}
+```
+
+#### Difficulty-Based Categorization
+Supports four difficulty levels with visual indicators in arena list:
+- Easy, Medium, Hard, Expert
+
+### Overall Assessment
+
+- **Code Quality**: 6/10 (had many API compatibility issues, but structure is good)
+- **Functionality**: 8/10 (core features work, needs player name storage)
+- **API Usage**: 7/10 (many 0.24.0 API issues, now fixed)
+- **Thread Safety**: 10/10 (perfect ConcurrentHashMap usage)
+- **Documentation**: 10/10 (excellent README)
+- **Build Status**: ✅ Successful (after fixes)
+- **Recommendation**: Needs review after GitHub repo creation and proper player name tracking
+
+This plugin has excellent structure and comprehensive features, but was built with incorrect API assumptions about AllayMC 0.24.0. All compilation errors are now fixed. The main remaining issue is player name handling - the current UUID-based approach works but isn't user-friendly. A proper implementation would store player names in the PlayerRecord alongside UUIDs.
+
+### Lessons Learned
+
+1. **Location3dc vs Location3d**: EntityMoveEvent returns Location3dc (constant), must create new Location3d instances for operations
+2. **EntityPlayer.getName() Doesn't Exist**: AllayMC 0.24.0 EntityPlayer has no getName() method - need alternative
+3. **Container.has no getSize()**: Use fixed size for known container types or iterate
+4. **Plugin Directory API**: Use `getPluginContainer().dataFolder().toFile()`, not `getDataFolder()`
+5. **Full Qualified Names Can Cause Issues**: Using full package names can cause confusion when imports are also present
+6. **Death Handler Must Actually Act**: Logging is not enough - must teleport or respawn players
+7. **ConcurrentHashMap is Essential**: Always use for shared plugin state
+8. **Player Names Should Be Stored**: Don't rely on API methods that don't exist - store player names in records
+
+### Future Improvements
+
+- Store player names in PlayerRecord for offline player support
+- Add UUID field to PlayerRecord for proper player identification
+- Add parkour kits (permanent speed, jump boost effects)
+- Add timed challenges with countdowns
+- Add spectator mode for watching players
+- Add parkour party/team mode
+- Add particle effects on checkpoint completion
+- Add custom sounds for events
+- Add daily challenges with special rewards
+
+### Commit Details
+- **No commit**: ParkourArena doesn't have a GitHub repo yet
+- **Changes**: Fixed all 7 critical API compatibility issues
+- **Build**: ✅ Successful
+
+### Remaining Unreviewed Plugins
+After this review, the following plugins remain unreviewed:
+- AuctionHouse
+- KitSystem
+- AnnouncementSystem
+- ServerAnnouncer
+
 
