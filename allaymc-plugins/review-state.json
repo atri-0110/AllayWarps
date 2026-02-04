@@ -11,7 +11,11 @@
     "RandomTeleport",
     "ItemMail",
     "ChatChannels",
-    "DeathChest"
+    "DeathChest",
+    "BountyHunter",
+    "TradePlugin",
+    "InventorySaver",
+    "PlayerStatsTracker"
   ],
-  "lastGithubIssueCheck": "2026-02-05T05:04:48.844952"
+  "lastGithubIssueCheck": "2026-02-05T06:00:00.000000"
 }
