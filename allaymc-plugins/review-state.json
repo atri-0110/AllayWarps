@@ -16,7 +16,10 @@
     "TradePlugin",
     "InventorySaver",
     "PlayerStatsTracker",
-    "MobArena"
+    "MobArena",
+    "PlayerStats",
+    "SimpleTPA",
+    "PlayerHomes"
   ],
-  "lastGithubIssueCheck": "2026-02-05T07:00:00.000000"
+  "lastGithubIssueCheck": "2026-02-05T11:00:00.000000"
 }
